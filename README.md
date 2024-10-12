@@ -6,14 +6,14 @@ This project demonstrates a Heating Valve Controller utilizing the Matter protoc
 
 My apartment has a steam radiator with a manual valve requiring me to constantly turn it on and off to maintain an comfortable indoor temperature. After exploring available solutions, I found that most options required significant modifications to the existing heating system and weren't easy to install. To address this, I developed a solution that regulates heating in real-time, has a universal attachment, and works with all smart home platforms.
 
-## Project Overview
-
 ### Features
 
 - Matter Protocol Integration: The controller is compatible with any Matter supported device.
 - Servo Motor Control: The servo is halted with feedback from a current sensor when hitting physical resistance.
 - Power Optimization: The code implements low power optimization for the ESP board and disconnects the motor's power source when not in use.
 - 3D Prining: The design has an adjustable mounting bracket and features a motor shaft with an internal sliding rail to accommodate the vertical movement of rotating the handle.
+
+## Project Overview
 
 ### 1. Hardware Components
 
