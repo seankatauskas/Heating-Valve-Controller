@@ -40,85 +40,44 @@ mcpwm_cmpr_handle_t comparator = NULL;
 mcpwm_gen_handle_t generator = NULL;
 
 
-/* Do any conversions/remapping for the actual value here */
-static esp_err_t app_driver_light_set_power(led_indicator_handle_t handle, esp_matter_attr_val_t *val)
+static esp_err_t app_driver_motor_control(esp_matter_attr_val_t *val)
 {
-#if CONFIG_BSP_LEDS_NUM > 0
     esp_err_t err = ESP_OK;
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+
     if (val->val.b) {
-        err = led_indicator_start(handle, BSP_LED_ON);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_MAX_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    } else {
-        err = led_indicator_start(handle, BSP_LED_OFF);
+        ESP_LOGI(TAG, "Opening: Setting mottor to maximum speed CCW");
         ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_MIN_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
+    } else {
+        ESP_LOGI(TAG, "Closing: Setting mottor to maximum speed CW");
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_MAX_PULSEWIDTH_US));
+        vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
     }
-    ESP_LOGI(TAG, "Stopping and disabiling timer");
+
+    ESP_LOGI(TAG, "Motor: Stopping");
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    ESP_LOGI(TAG, "Stopping and disabling timer for motor");
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY));
     ESP_ERROR_CHECK(mcpwm_timer_disable(timer));
     return err;
-#else
-    ESP_LOGI(TAG, "LED set power: %d", val->val.b);
-    return ESP_OK;
-#endif
 }
 
-static esp_err_t app_driver_light_set_brightness(led_indicator_handle_t handle, esp_matter_attr_val_t *val)
+esp_err_t led_attribute_set(led_indicator_handle_t handle, int brightness, int saturation, int hue)
 {
-    int value = REMAP_TO_RANGE(val->val.u8, MATTER_BRIGHTNESS, STANDARD_BRIGHTNESS);
-#if CONFIG_BSP_LEDS_NUM > 0
-    return led_indicator_set_brightness(handle, value);
-#else
-    ESP_LOGI(TAG, "LED set brightness: %d", value);
-    return ESP_OK;
-#endif
-}
-
-static esp_err_t app_driver_light_set_hue(led_indicator_handle_t handle, esp_matter_attr_val_t *val)
-{
-    int value = REMAP_TO_RANGE(val->val.u8, MATTER_HUE, STANDARD_HUE);
-#if CONFIG_BSP_LEDS_NUM > 0
+    esp_err_t err = ESP_OK;
+    err |= led_indicator_set_brightness(handle, brightness);
     led_indicator_ihsv_t hsv;
     hsv.value = led_indicator_get_hsv(handle);
-    hsv.h = value;
-    return led_indicator_set_hsv(handle, hsv.value);
-#else
-    ESP_LOGI(TAG, "LED set hue: %d", value);
-    return ESP_OK;
-#endif
-}
+    hsv.s = saturation;
+    hsv.h = hue;
+    err |= led_indicator_set_hsv(handle, hsv.value);
 
-static esp_err_t app_driver_light_set_saturation(led_indicator_handle_t handle, esp_matter_attr_val_t *val)
-{
-    int value = REMAP_TO_RANGE(val->val.u8, MATTER_SATURATION, STANDARD_SATURATION);
-#if CONFIG_BSP_LEDS_NUM > 0
-    led_indicator_ihsv_t hsv;
-    hsv.value = led_indicator_get_hsv(handle);
-    hsv.s = value;
-    return led_indicator_set_hsv(handle, hsv.value);
-#else
-    ESP_LOGI(TAG, "LED set saturation: %d", value);
-    return ESP_OK;
-#endif
-}
-
-static esp_err_t app_driver_light_set_temperature(led_indicator_handle_t handle, esp_matter_attr_val_t *val)
-{
-    uint32_t value = REMAP_TO_RANGE_INVERSE(val->val.u16, STANDARD_TEMPERATURE_FACTOR);
-#if CONFIG_BSP_LEDS_NUM > 0
-    return led_indicator_set_color_temperature(handle, value);
-#else
-    ESP_LOGI(TAG, "LED set temperature: %ld", value);
-    return ESP_OK;
-#endif
+    return err;
 }
 
 static void app_driver_button_toggle_cb(void *arg, void *data)
@@ -144,23 +103,28 @@ esp_err_t app_driver_attribute_update(app_driver_handle_t driver_handle, uint16_
         led_indicator_handle_t handle = (led_indicator_handle_t)driver_handle;
         if (cluster_id == OnOff::Id) {
             if (attribute_id == OnOff::Attributes::OnOff::Id) {
-                err = app_driver_light_set_power(handle, val);
+                if (val->val.b) {
+                    err |= led_attribute_set(handle, GREEN_BRIGHTNESS, GREEN_SATURATION, GREEN_HUE);
+                } else {
+                    err |= led_attribute_set(handle, RED_BRIGHTNESS, RED_SATURATION, RED_HUE);
+                }
+                err |= led_indicator_start(handle, BSP_LED_ON);
+                err |= app_driver_motor_control(val);
+                err |= led_indicator_start(handle, BSP_LED_OFF);
             }
-        } else if (cluster_id == LevelControl::Id) {
-            if (attribute_id == LevelControl::Attributes::CurrentLevel::Id) {
-                err = app_driver_light_set_brightness(handle, val);
-            }
-        } else if (cluster_id == ColorControl::Id) {
-            if (attribute_id == ColorControl::Attributes::CurrentHue::Id) {
-                err = app_driver_light_set_hue(handle, val);
-            } else if (attribute_id == ColorControl::Attributes::CurrentSaturation::Id) {
-                err = app_driver_light_set_saturation(handle, val);
-            } else if (attribute_id == ColorControl::Attributes::ColorTemperatureMireds::Id) {
-                err = app_driver_light_set_temperature(handle, val);
-            }
-        }
+        } 
     }
     return err;
+}
+
+
+void led_blink_setup(led_indicator_handle_t handle, int blink_count = 10, int blink_interval_ms = 500) {
+    for (int i = 0; i < blink_count; i++) { 
+        led_indicator_start(handle, BSP_LED_ON);
+        vTaskDelay(pdMS_TO_TICKS(blink_interval_ms));
+        led_indicator_start(handle, BSP_LED_OFF);
+        vTaskDelay(pdMS_TO_TICKS(blink_interval_ms));
+    }
 }
 
 esp_err_t app_driver_light_set_defaults(uint16_t endpoint_id)
@@ -170,36 +134,13 @@ esp_err_t app_driver_light_set_defaults(uint16_t endpoint_id)
     led_indicator_handle_t handle = (led_indicator_handle_t)priv_data;
     esp_matter_attr_val_t val = esp_matter_invalid(NULL);
 
-    /* Setting brightness */
-    attribute_t *attribute = attribute::get(endpoint_id, LevelControl::Id, LevelControl::Attributes::CurrentLevel::Id);
-    attribute::get_val(attribute, &val);
-    err |= app_driver_light_set_brightness(handle, &val);
+    /* Setting brightness, saturation, and hue for blinking setup*/
+    ESP_LOGI(TAG, "Light: Blinking Light Set");
+    err |= led_attribute_set(handle, DEFAULT_BRIGHTNESS, DEFAULT_SATURATION, DEFAULT_HUE);
 
-    /* Setting color */
-    attribute = attribute::get(endpoint_id, ColorControl::Id, ColorControl::Attributes::ColorMode::Id);
-    attribute::get_val(attribute, &val);
-    if (val.val.u8 == (uint8_t)ColorControl::ColorMode::kCurrentHueAndCurrentSaturation) {
-        /* Setting hue */
-        attribute = attribute::get(endpoint_id, ColorControl::Id, ColorControl::Attributes::CurrentHue::Id);
-        attribute::get_val(attribute, &val);
-        err |= app_driver_light_set_hue(handle, &val);
-        /* Setting saturation */
-        attribute = attribute::get(endpoint_id, ColorControl::Id, ColorControl::Attributes::CurrentSaturation::Id);
-        attribute::get_val(attribute, &val);
-        err |= app_driver_light_set_saturation(handle, &val);
-    } else if (val.val.u8 == (uint8_t)ColorControl::ColorMode::kColorTemperature) {
-        /* Setting temperature */
-        attribute = attribute::get(endpoint_id, ColorControl::Id, ColorControl::Attributes::ColorTemperatureMireds::Id);
-        attribute::get_val(attribute, &val);
-        err |= app_driver_light_set_temperature(handle, &val);
-    } else {
-        ESP_LOGE(TAG, "Color mode not supported");
-    }
-
-    /* Setting power */
-    attribute = attribute::get(endpoint_id, OnOff::Id, OnOff::Attributes::OnOff::Id);
-    attribute::get_val(attribute, &val);
-    err |= app_driver_light_set_power(handle, &val);
+    /* Blink for 5 seconds */
+    ESP_LOGI(TAG, "Light: Blinking");
+    led_blink_setup(handle);
 
     return err;
 }

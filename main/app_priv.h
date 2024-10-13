@@ -19,23 +19,21 @@
 #include "esp_openthread_types.h"
 #endif
 
-/** Standard max values (used for remapping attributes) */
-#define STANDARD_BRIGHTNESS 255
-#define STANDARD_HUE 360
-#define STANDARD_SATURATION 255
-#define STANDARD_TEMPERATURE_FACTOR 1000000
-
-/** Matter max values (used for remapping attributes) */
-#define MATTER_BRIGHTNESS 254
-#define MATTER_HUE 254
-#define MATTER_SATURATION 254
-#define MATTER_TEMPERATURE_FACTOR 1000000
-
 /** Default attribute values used during initialization */
-#define DEFAULT_POWER true
+#define DEFAULT_POWER false
 #define DEFAULT_BRIGHTNESS 64
 #define DEFAULT_HUE 128
 #define DEFAULT_SATURATION 254
+
+/* Green (Hue, Saturation, and Brightness) */
+#define GREEN_HUE         120
+#define GREEN_SATURATION  255
+#define GREEN_BRIGHTNESS  128
+
+/* Red (Hue, Saturation, and Brightness) */
+#define RED_HUE           0 
+#define RED_SATURATION    255
+#define RED_BRIGHTNESS    128
 
 extern mcpwm_timer_handle_t timer;
 extern mcpwm_oper_handle_t oper;
