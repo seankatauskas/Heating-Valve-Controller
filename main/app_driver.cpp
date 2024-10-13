@@ -59,7 +59,7 @@ static esp_err_t app_driver_motor_control(esp_matter_attr_val_t *val)
 
     ESP_LOGI(TAG, "Motor: Stopping");
     ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(100));
     
     ESP_LOGI(TAG, "Stopping and disabling timer for motor");
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY));
