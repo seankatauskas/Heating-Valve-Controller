@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/mcpwm_prelude.h"
+#include "ina219.h"
 
 #include <app_priv.h>
 
@@ -28,6 +29,14 @@
 #define SERVO_TIMEBASE_RESOLUTION_HZ 1000000  // 1MHz, 1us per tick
 #define SERVO_TIMEBASE_PERIOD        20000    // 20000 ticks, 20ms (50Hz)
 
+// Current sensor control parameters
+#define I2C_PORT I2C_NUM_0
+#define I2C_ADDR 0x40
+
+#define EXAMPLE_I2C_MASTER_SDA GPIO_NUM_19
+#define EXAMPLE_I2C_MASTER_SCL GPIO_NUM_20
+#define EXAMPLE_SHUNT_RESISTOR_MILLI_OHM 100
+
 using namespace chip::app::Clusters;
 using namespace esp_matter;
 
@@ -39,6 +48,9 @@ mcpwm_oper_handle_t oper = NULL;
 mcpwm_cmpr_handle_t comparator = NULL;
 mcpwm_gen_handle_t generator = NULL;
 
+ina219_t g_ina219_dev;
+
+void detect_motor_resistance();
 
 static esp_err_t app_driver_motor_control(esp_matter_attr_val_t *val)
 {
@@ -50,22 +62,88 @@ static esp_err_t app_driver_motor_control(esp_matter_attr_val_t *val)
     if (val->val.b) {
         ESP_LOGI(TAG, "Opening: Setting mottor to maximum speed CCW");
         ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_MIN_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
+        detect_motor_resistance();
+        // vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
     } else {
         ESP_LOGI(TAG, "Closing: Setting mottor to maximum speed CW");
         ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_MAX_PULSEWIDTH_US));
-        vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
+        detect_motor_resistance();
+        // vTaskDelay(pdMS_TO_TICKS(3000));  // Run for 3 seconds
     }
 
-    ESP_LOGI(TAG, "Motor: Stopping");
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // ESP_LOGI(TAG, "Motor: Stopping");
+    // ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));
     
     ESP_LOGI(TAG, "Stopping and disabling timer for motor");
+    vTaskDelay(pdMS_TO_TICKS(100));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY));
     ESP_ERROR_CHECK(mcpwm_timer_disable(timer));
     return err;
 }
+
+esp_err_t app_driver_sensor_init()
+{
+    esp_err_t err = ESP_OK;
+    ESP_ERROR_CHECK(i2cdev_init());
+    memset(&g_ina219_dev, 0, sizeof(ina219_t));
+
+    ESP_ERROR_CHECK(ina219_init_desc(&g_ina219_dev, I2C_ADDR, I2C_PORT, EXAMPLE_I2C_MASTER_SDA, EXAMPLE_I2C_MASTER_SCL));
+    ESP_LOGI(TAG, "Initializing INA219");
+    ESP_ERROR_CHECK(ina219_init(&g_ina219_dev));
+
+    ESP_LOGI(TAG, "Configuring INA219");
+    ESP_ERROR_CHECK(ina219_configure(&g_ina219_dev, INA219_BUS_RANGE_16V, INA219_GAIN_0_125,
+            INA219_RES_12BIT_1S, INA219_RES_12BIT_1S, INA219_MODE_CONT_SHUNT_BUS));
+
+    ESP_LOGI(TAG, "Calibrating INA219");
+    ESP_ERROR_CHECK(ina219_calibrate(&g_ina219_dev, (float)EXAMPLE_SHUNT_RESISTOR_MILLI_OHM / 1000.0f));
+
+    return err;
+}
+
+void detect_motor_resistance()
+{
+    float bus_voltage, shunt_voltage, current, power;
+    float previous_current = 0.0;
+    float rate_of_change;
+    const int time_interval_ms = 25;
+    const float POWER_THRESHOLD = 1400.0;  // in mW
+    const float CURRENT_RATE_THRESHOLD = 1.5;  // in mA/ms
+    const int GRACE_PERIOD_MS = 500;
+
+    TickType_t start_time = xTaskGetTickCount();
+
+    while (1) {
+        // Read sensor values
+        ESP_ERROR_CHECK(ina219_get_bus_voltage(&g_ina219_dev, &bus_voltage));
+        ESP_ERROR_CHECK(ina219_get_shunt_voltage(&g_ina219_dev, &shunt_voltage));
+        ESP_ERROR_CHECK(ina219_get_current(&g_ina219_dev, &current));
+        ESP_ERROR_CHECK(ina219_get_power(&g_ina219_dev, &power));
+
+        // Convert current and power to mA and mW for logging
+        current *= 1000;  // Convert to mA
+        power *= 1000;    // Convert to mW
+
+        // Calculate rate of current change (mA/ms)
+        rate_of_change = (current - previous_current) / time_interval_ms;  // in mA/ms
+
+        // Log the values
+        printf("VBUS: %.04f V, VSHUNT: %.04f mV, IBUS: %.04f mA, PBUS: %.04f mW, Rate of Current Change: %.04f mA/ms\n",
+                bus_voltage, shunt_voltage * 1000, current, power, rate_of_change);
+
+        if ((xTaskGetTickCount() - start_time) > pdMS_TO_TICKS(GRACE_PERIOD_MS)) {
+            if (power >= POWER_THRESHOLD && rate_of_change >= CURRENT_RATE_THRESHOLD) {
+                ESP_LOGW(TAG, "Thresholds exceeded! Stopping motor...");
+                ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, SERVO_STOP_PULSEWIDTH_US));  // Stop motor by setting pulse width to stop
+                return;
+            }
+        }
+
+        previous_current = current;  // Store current in mA
+        vTaskDelay(pdMS_TO_TICKS(time_interval_ms));
+    }
+}
+
 
 esp_err_t led_attribute_set(led_indicator_handle_t handle, int brightness, int saturation, int hue)
 {
