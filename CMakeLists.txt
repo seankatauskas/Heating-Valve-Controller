@@ -23,6 +23,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(espidflib)
 
+# https://github.com/UncleRus/esp-idf-lib?tab=readme-ov-file
 set(EXTRA_COMPONENT_DIRS
     "${ESP_MATTER_PATH}/examples/common"
     "${MATTER_SDK_PATH}/config/esp32/components"
