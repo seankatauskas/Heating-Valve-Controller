@@ -154,7 +154,8 @@ extern "C" void app_main()
     /* Initialize driver */
     app_driver_handle_t light_handle = app_driver_light_init();
     app_driver_handle_t button_handle = app_driver_button_init();
-    int motor_handle = app_driver_motor_init();
+    app_driver_motor_init();
+    app_driver_sensor_init();
     app_reset_button_register(button_handle);
 
     /* Create a Matter node and add the mandatory Root Node device type on endpoint 0 */

@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/mcpwm_prelude.h"
+#include "ina219.h"
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include "esp_openthread_types.h"
@@ -39,6 +40,7 @@ extern mcpwm_timer_handle_t timer;
 extern mcpwm_oper_handle_t oper;
 extern mcpwm_cmpr_handle_t comparator;
 extern mcpwm_gen_handle_t generator;
+extern ina219_t g_ina219_dev;
 
 typedef void *app_driver_handle_t;
 
@@ -68,6 +70,17 @@ app_driver_handle_t app_driver_button_init();
  * @return NULL in case of failure.
  */
 int app_driver_motor_init();
+
+/** Initialize the INA219 current sensor
+ *
+ * This function initializes the INA219 current sensor and sets up
+ * its configuration for measuring bus voltage, shunt voltage, current,
+ * and power.
+ *
+ * @return Handle on success.
+ * @return NULL in case of failure.
+ */
+esp_err_t app_driver_sensor_init();
 
 /** Driver Update
  *
